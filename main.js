@@ -1,3 +1,11 @@
+import fs from 'fs/promises';
+
+import readline from 'readline';
+const rl = readline.createInterface({
+	input: process.stdin,
+	output: process.stdout
+});
+
 import keypress from 'keypress';
 keypress(process.stdin);
 
@@ -32,18 +40,51 @@ console.log(snake);
 
 /** @type KeyPressData */
 let PRESSED_KEY = null;
-process.stdin.on('keypress', (_, key) => PRESSED_KEY = key);
+const recordKeyPress = (_, key) => PRESSED_KEY = key;
+process.stdin.on('keypress', recordKeyPress);
 process.stdin.setRawMode(true); // interpret keypress literally (no terminal specific behavior like ctrl+c)
 
-const exitProcess = (message) => {
+const endGame = () => {
+	process.stdin.off('keypress', recordKeyPress);
 	process.stdin.setRawMode(false);
 	clearInterval(MAIN_LOOP);
+};
+
+const exitProcess = (message) => {
+	endGame();
+
 	if (message) console.log(message);
 	process.exit();
 };
 
-const gameOver = (message = '==[ YOU DIED! ]==\n') => {
-	exitProcess(message);
+const getPlayerName = () => {
+	try {
+		return new Promise(res => {
+			rl.question('Enter your name: ', res);
+		});
+	} catch (err) {
+		console.error(`ERROR WHEN READING PLAYER NAME FROM STDIN:\n\t${err}`);
+		return getPlayerName();
+	}
+};
+
+const gameOver = async (snake_length, save_score = true, exit_message = '==[ YOU DIED! ]==\n') => {
+	endGame();
+
+	console.log(exit_message);
+
+	if (save_score) {
+		const player_name = await getPlayerName();
+		const line = `${player_name}:\t${snake_length}\n`;
+		try {
+			await fs.writeFile('./scores.txt', line, { flag: 'a+' });
+			console.log(`\t-> Saved to 'scores.txt'.`);
+		} catch (err) {
+			console.error(`ERROR SAVING SCORE TO ./scores.txt:\n\t${err}`);
+		}
+	}
+
+	exitProcess();
 };
 
 const position_memory = [];
@@ -51,7 +92,7 @@ const position_memory = [];
 const UPDATE_INTERVAL_MS = 75;
 let tick = 0;
 const tickRate = () => Math.max(2, 6 - Math.floor(snake.length / 6));
-const MAIN_LOOP = setInterval(() => {
+const MAIN_LOOP = setInterval(async () => {
 	if (PRESSED_KEY) {
 
 		switch (PRESSED_KEY.name.toLowerCase()) {
@@ -77,14 +118,14 @@ const MAIN_LOOP = setInterval(() => {
 	// moving into cells has the behaviors defined by the cell char:
 	switch (snake_cell.char.toLowerCase()) {
 		case 'x':
-			gameOver();
+			await gameOver(snake.length);
 			break;
 		case 'o':
 			snake.length += 1;
 			break;
 	}
 
-	if (position_memory.find(index => index === grid.vecToIndex(snake.position))) gameOver();
+	if (position_memory.find(index => index === grid.vecToIndex(snake.position))) await gameOver(snake.length);
 
 	// assinn cur cell pos char
 	snake_cell.char = (() => {
